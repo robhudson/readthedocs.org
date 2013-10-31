@@ -14,7 +14,7 @@ import requests
 from betterversion.better import version_windows, BetterVersion 
 from builds.models import Version
 from djangome import views as djangome
-from search.indexes import Page as PageIndex, Project as ProjectIndex
+from search.indexes import PageIndex, ProjectIndex
 from projects.models import Project, EmailHook
 
 from .serializers import ProjectSerializer
@@ -281,47 +281,28 @@ def search(request):
     if project_slug:
         project = Project.objects.get(slug=project_slug)
         # This is a search within a project -- do a Page search.
-        body = {
-            "filter": {
-                "and": [
-                    {"term": {"project": project.slug}},
-                    {"term": {"version": version_slug}},
-                ]
-            },
-            "query": {
-                "bool": {
-                    "should": [
-                        {"match": {"title": {"query": query, "boost": 10}}},
-                        {"match": {"headers": {"query": query, "boost": 5}}},
-                        {"match": {"content": {"query": query}}},
-                    ]
-                }
-            },
-            "facets": {
-                "path": {
-                    "terms": {"field": "path"}}
-            },
-            "highlight": {
-                "fields": {
-                    "title": {},
-                    "headers": {},
-                    "content": {},
-                }
-            }
-        }
-        results = PageIndex().search(body, routing=project.pk, fields=['title', 'project', 'version', 'path'])
+        results = (
+            PageIndex().search()
+            .filter(project=project.slug, version=version_slug)
+            .query(title__match=query, headers__match=query,
+                   content__match=query, should=True)
+            .boost(title__match=10, headers__match=5)
+            .facet('path')
+            .highlight('title', 'headers', 'content')
+            .values_dict('title', 'project', 'version', 'path')
+            .execute())
 
     else:
-        body = {
-            "query": {
-                "bool": {
-                    "should": [
-                        {"match": {"name": {"query": query, "boost": 10}}},
-                        {"match": {"description": {"query": query}}},
-                    ]
-                },
-            }
-        }
-        results = ProjectIndex().search(body, fields=['name', 'slug', 'description', 'lang'])
+        results = (
+            ProjectIndex().search()
+            .query(name__match=query, description__match=query, should=True)
+            .boost(name__match=10)
+            .values_dict('name', 'slug', 'description', 'lang')
+            .execute())
 
-    return Response({'results': results})
+    response = {}
+    if hasattr(results, 'facets'):
+        response['facets'] = results.facets
+    response['hits'] = results.results
+
+    return Response(response)

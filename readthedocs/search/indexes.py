@@ -18,6 +18,7 @@ import datetime
 
 from elasticsearch import Elasticsearch, exceptions
 from elasticsearch.helpers import bulk_index
+from elasticutils import S
 
 from django.conf import settings
 
@@ -181,12 +182,11 @@ class Index(object):
         if delete and old_index:
             self.es.indices.delete(index=old_index)
 
-    def search(self, body, **kwargs):
-        return self.es.search(index=self._index, doc_type=self._type,
-                              body=body, **kwargs)
+    def search(self):
+        return S().indexes(self._index).doctypes(self._type)
 
 
-class Project(Index):
+class ProjectIndex(Index):
 
     _type = 'project'
 
@@ -225,7 +225,7 @@ class Project(Index):
         return doc
 
 
-class Page(Index):
+class PageIndex(Index):
 
     _type = 'page'
     _parent = 'project'
